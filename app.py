@@ -4,7 +4,7 @@ import streamlit as st
 from groq import Groq
 
 # Укажите ваш скопированный API-ключ с сайта Groq вместо текста ниже
-GROQ_API_KEY = "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"
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 # Имя файла на вашем Макбуке, где будет храниться история
 HISTORY_FILE = "chat_history.json"
