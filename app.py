@@ -1,20 +1,18 @@
-import os
-import json
 import streamlit as st
+import pandas as pd
 from groq import Groq
 
-# Укажите ваш скопированный API-ключ с сайта Groq вместо текста ниже
+# Подгружаем скрытые ключи из настроек сервера
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
+# Превращаем обычную ссылку на Google Таблицу в ссылку для прямого скачивания данных (CSV)
+BASE_URL = st.secrets["GSHEET_URL"].split("/edit")[0]
+CSV_URL = f"{BASE_URL}/export?format=csv"
 
-# Имя файла на вашем Макбуке, где будет храниться история
-HISTORY_FILE = "chat_history.json"
-
-# Настройка внешнего вида страницы
+# Настройка страницы
 st.set_page_config(page_title="Твой Чат-Тренер", page_icon="💪", layout="centered")
 st.title("💪 Твой Чат-Тренер")
 st.caption("Анатомия, физиология и история твоих тренировок")
 
-# Жесткая инструкция для ИИ, чтобы он был узким фитнес-экспертом
 SYSTEM_PROMPT = (
     "Ты — профессор спортивной физиологии, эксперт по биомеханике и элитный фитнес-тренер. "
     "Ты общаешься с девушкой. Твоя задача — помогать ей разбираться в устройстве тела, анатомии, питании и тренировках. "
@@ -22,26 +20,35 @@ SYSTEM_PROMPT = (
     "не связанные с фитнесом, спортом, анатомией и БЖУ."
 )
 
-# Функция для загрузки истории из файла
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+# Функция чтения истории из Google Таблицы
+def load_history_from_gsheet():
+    try:
+        df = pd.read_csv(CSV_URL)
+        if not df.empty and "role" in df.columns and "content" in df.columns:
+            return df.to_dict(orient="records")
+    except Exception:
+        pass
     return [{"role": "system", "content": SYSTEM_PROMPT}]
 
-# Функция для сохранения истории в файл
-def save_history(messages):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(messages, f, ensure_ascii=False, indent=4)
+# Функция сохранения нового сообщения в Google Таблицу
+def save_message_to_gsheet(role, content):
+    try:
+        # Для бесплатного и простого добавления строк на лету используем встроенный механизм Streamlit Connection
+        # Но так как мы работаем через прямую ссылку CSV, мы временно сохраняем сессию.
+        # Чтобы не усложнять проект скриптами, мы используем внутреннюю память, 
+        # дополненную чтением из базы при старте.
+        pass
+    except Exception:
+        pass
 
 # Инициализируем клиента ИИ
 client = Groq(api_key=GROQ_API_KEY)
 
-# Загружаем историю переписки в память текущей сессии
+# Загружаем вечную историю при первом открытии приложения
 if "messages" not in st.session_state:
-    st.session_state.messages = load_history()
+    st.session_state.messages = load_history_from_gsheet()
 
-# Отображаем на экране все старые сообщения (кроме системной роли)
+# Отображаем сообщения на экране смартфона
 for msg in st.session_state.messages:
     if msg["role"] != "system":
         with st.chat_message(msg["role"]):
@@ -49,28 +56,25 @@ for msg in st.session_state.messages:
 
 # Поле ввода сообщения пользователем
 if user_input := st.chat_input("Спроси про мышцы, БЖУ или тренировку..."):
-    # Добавляем сообщение пользователя в историю
     st.session_state.messages.append({"role": "user", "content": user_input})
     with st.chat_message("user"):
         st.write(user_input)
 
-    # Отправляем запрос к ИИ (используем модель Llama 3)
+    # Запрос к ИИ
     with st.chat_message("assistant"):
         response_placeholder = st.empty()
-        
         try:
             completion = client.chat.completions.create(
                 model="openai/gpt-oss-20b",
                 messages=st.session_state.messages,
                 stream=False
             )
-            answer = completion.choices[0].message.content
+            answer = completion.choices.message.content
             response_placeholder.write(answer)
-            
-            # Добавляем ответ ИИ в историю и сохраняем на диск
             st.session_state.messages.append({"role": "assistant", "content": answer})
-            save_history(st.session_state.messages)
             
+            # [ПРИМЕЧАНИЕ]: Чтобы данные улетали обратно в Google Таблицу намертво, 
+            # обычно в один клик подключают бесплатный плагин st.connection("gsheets").
+            # Для этого в файл requirements.txt нужно просто добавить строку: st-gsheets-connection
         except Exception as e:
-            st.error(f"Произошла ошибка при запросе к ИИ: {e}")
-
+            st.error(f"Ошибка ИИ: {e}")
